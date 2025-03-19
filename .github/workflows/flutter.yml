@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest  # 改为 macOS 环境
+    runs-on: macos-latest
 
     steps:
       # 1. 检出代码
@@ -23,42 +23,48 @@ jobs:
       # 3. 设置 Flutter 环境
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.3'  # 最新稳定版
+          flutter-version: '3.24.3'
           channel: 'stable'
 
-      # 4. 生成 Android 和 iOS 目录
-      - name: 生成 Android 和 iOS 目录
+      # 4. 创建 Flutter 项目目录并生成 Android 和 iOS 目录
+      - name: 创建项目目录并生成 Android 和 iOS 目录
         run: |
-          flutter create .
+          mkdir -p private_chat
+          cd private_chat
+          flutter create . --project-name private_chat
 
-      # 5. 生成 local.properties 文件（用于 Android 构建）
+      # 5. 生成 local.properties 文件
       - name: 生成 local.properties
         run: |
           echo "sdk.dir=$(dirname $(dirname $(which flutter)))/android-sdk" > android/local.properties
           echo "flutter.sdk=$(dirname $(dirname $(which flutter)))" >> android/local.properties
+        working-directory: private_chat
 
       # 6. 获取 Flutter 依赖
       - name: 获取依赖
         run: flutter pub get
+        working-directory: private_chat
 
       # 7. 构建 APK（Android）
       - name: 构建 APK
         run: flutter build apk --release --verbose
+        working-directory: private_chat
 
       # 8. 构建 IPA（iOS）
       - name: 构建 IPA
-        run: flutter build ipa --release --no-codesign  # 在 macOS 上构建 IPA，未签名
+        run: flutter build ipa --release --no-codesign
+        working-directory: private_chat
 
       # 9. 上传 APK 到 Artifacts
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: private_chat/build/app/outputs/flutter-apk/app-release.apk
 
       # 10. 上传 IPA 到 Artifacts
       - name: 上传 IPA
         uses: actions/upload-artifact@v4
         with:
           name: app-release-ipa
-          path: build/ios/ipa/*.ipa  # macOS 环境下 IPA 文件路径
+          path: private_chat/build/ios/ipa/*.ipa

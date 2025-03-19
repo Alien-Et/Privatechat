@@ -1,4 +1,4 @@
-name: 去中心化聊天
+name: privatechat
 description: 一个去中心化的点对点聊天应用
 version: 1.0.0+1
 environment:
