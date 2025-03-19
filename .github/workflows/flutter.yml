@@ -1,0 +1,512 @@
+name: 构建和发布Flutter应用
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出代码
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+
+      # 2. 设置Java环境
+      - name: 设置Java环境
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 3. 设置Flutter环境
+      - name: 设置Flutter环境
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          cache: true
+
+      # 4. 检查Flutter版本
+      - name: 检查Flutter版本
+        run: flutter --version
+
+      # 5. 创建Flutter项目并写入代码
+      - name: 创建Flutter项目和代码
+        run: |
+          # 创建项目目录
+          if [ ! -d "decentralized_chat" ]; then
+            flutter create decentralized_chat
+          fi
+
+          # 写入 pubspec.yaml
+          cat << 'EOF' > decentralized_chat/pubspec.yaml
+          name: decentralized_chat
+          description: 一个去中心化的点对点聊天应用
+          version: 1.0.0+1
+          environment:
+            sdk: '>=2.17.0 <3.0.0'
+          dependencies:
+            flutter:
+              sdk: flutter
+            flutter_webrtc: ^0.10.0
+            shared_preferences: ^2.2.3
+            provider: ^6.1.2
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+          flutter:
+            uses-material-design: true
+          EOF
+
+          # 写入 lib/main.dart
+          mkdir -p decentralized_chat/lib
+          cat << 'EOF' > decentralized_chat/lib/main.dart
+          import 'package:flutter/material.dart';
+          import 'pages/home_page.dart';
+
+          void main() {
+            runApp(const DecentralizedChatApp());
+          }
+
+          class DecentralizedChatApp extends StatelessWidget {
+            const DecentralizedChatApp({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                title: 'Decentralized Chat',
+                theme: ThemeData.light().copyWith(
+                  scaffoldBackgroundColor: Colors.grey[200],
+                  primaryColor: Colors.blue[600],
+                  textTheme: const TextTheme(bodyMedium: TextStyle(color: Colors.black87)),
+                ),
+                darkTheme: ThemeData.dark().copyWith(
+                  scaffoldBackgroundColor: Colors.grey[800],
+                  primaryColor: Colors.green[400],
+                  textTheme: const TextTheme(bodyMedium: TextStyle(color: Colors.white70)),
+                ),
+                themeMode: ThemeMode.system,
+                home: const HomePage(),
+              );
+            }
+          }
+          EOF
+
+          # 写入 lib/models/friend.dart
+          mkdir -p decentralized_chat/lib/models
+          cat << 'EOF' > decentralized_chat/lib/models/friend.dart
+          class Friend {
+            final String id;
+            final String name;
+            final String avatarUrl;
+            final bool isOnline;
+
+            Friend({
+              required this.id,
+              required this.name,
+              this.avatarUrl = '',
+              this.isOnline = false,
+            });
+          }
+          EOF
+
+          # 写入 lib/models/message.dart
+          cat << 'EOF' > decentralized_chat/lib/models/message.dart
+          class Message {
+            final String senderId;
+            final String content;
+            final DateTime timestamp;
+            final bool isSelf;
+
+            Message({
+              required this.senderId,
+              required this.content,
+              required this.timestamp,
+              required this.isSelf,
+            });
+          }
+          EOF
+
+          # 写入 lib/pages/home_page.dart
+          mkdir -p decentralized_chat/lib/pages
+          cat << 'EOF' > decentralized_chat/lib/pages/home_page.dart
+          import 'package:flutter/material.dart';
+          import 'chat_page.dart';
+          import '../components/friend_item.dart';
+          import '../models/friend.dart';
+
+          class HomePage extends StatefulWidget {
+            const HomePage({super.key});
+
+            @override
+            _HomePageState createState() => _HomePageState();
+          }
+
+          class _HomePageState extends State<HomePage> {
+            final _pageController = PageController();
+            final List<Friend> friends = List.generate(
+              10,
+              (index) => Friend(id: 'id$index', name: 'Friend $index', isOnline: index % 2 == 0),
+            );
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text('Decentralized Chat'),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: () => showSearch(context: context, delegate: ChatSearchDelegate(friends)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.person_add),
+                      onPressed: () => _showAddFriendDialog(context),
+                    ),
+                  ],
+                ),
+                body: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('Recent Chats', style: TextStyle(fontWeight: FontWeight.bold)),
+                          SizedBox(width: 16),
+                          Text('Friends List'),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        children: [
+                          _buildChatList(),
+                          _buildFriendsList(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget _buildChatList() {
+              return ListView.builder(
+                itemCount: friends.length,
+                itemBuilder: (context, index) => ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: friends[index].isOnline ? Colors.green : Colors.grey,
+                  ),
+                  title: Text(friends[index].name),
+                  subtitle: const Text('Last message'),
+                  trailing: const Text('10:00'),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ChatPage(friend: friends[index])),
+                  ),
+                ),
+              );
+            }
+
+            Widget _buildFriendsList() {
+              return ListView.builder(
+                itemCount: friends.length,
+                itemBuilder: (context, index) => FriendItem(friend: friends[index]),
+              );
+            }
+
+            void _showAddFriendDialog(BuildContext context) {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Add Friend'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () => print('Scan online peers'),
+                        child: const Text('Scan Online Peers'),
+                      ),
+                      TextField(
+                        decoration: const InputDecoration(labelText: 'Enter Friend ID'),
+                        onSubmitted: (id) => print('Add ID: $id'),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
+
+          class ChatSearchDelegate extends SearchDelegate {
+            final List<Friend> friends;
+
+            ChatSearchDelegate(this.friends);
+
+            @override
+            List<Widget> buildActions(BuildContext context) => [
+                  IconButton(icon: const Icon(Icons.clear), onPressed: () => query = ''),
+                ];
+
+            @override
+            Widget buildLeading(BuildContext context) => IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => close(context, null),
+                );
+
+            @override
+            Widget buildResults(BuildContext context) => _buildSearchResults();
+
+            @override
+            Widget buildSuggestions(BuildContext context) => _buildSearchResults();
+
+            Widget _buildSearchResults() {
+              final results = friends.where((friend) => friend.name.contains(query)).toList();
+              return ListView.builder(
+                itemCount: results.length,
+                itemBuilder: (context, index) => FriendItem(friend: results[index]),
+              );
+            }
+          }
+          EOF
+
+          # 写入 lib/pages/chat_page.dart
+          cat << 'EOF' > decentralized_chat/lib/pages/chat_page.dart
+          import 'package:flutter/material.dart';
+          import '../models/friend.dart';
+          import '../models/message.dart';
+          import '../components/message_bubble.dart';
+
+          class ChatPage extends StatefulWidget {
+            final Friend friend;
+
+            const ChatPage({super.key, required this.friend});
+
+            @override
+            _ChatPageState createState() => _ChatPageState();
+          }
+
+          class _ChatPageState extends State<ChatPage> {
+            final _inputController = TextEditingController();
+            final List<Message> messages = List.generate(
+              10,
+              (index) => Message(
+                senderId: index % 2 == 0 ? 'me' : 'friend',
+                content: 'Message $index',
+                timestamp: DateTime.now(),
+                isSelf: index % 2 == 0,
+              ),
+            );
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.friend.name),
+                      Text(
+                        '${widget.friend.isOnline ? 'Online' : 'Offline'} - IP: 203.0.113.1',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                body: Column(
+                  children: [
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) => MessageBubble(message: messages[index]),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _inputController,
+                              decoration: const InputDecoration(hintText: 'Enter message', border: OutlineInputBorder()),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.send),
+                            onPressed: () {
+                              if (_inputController.text.isNotEmpty) {
+                                setState(() {
+                                  messages.add(Message(
+                                    senderId: 'me',
+                                    content: _inputController.text,
+                                    timestamp: DateTime.now(),
+                                    isSelf: true,
+                                  ));
+                                  _inputController.clear();
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
+          EOF
+
+          # 写入 lib/components/friend_item.dart
+          mkdir -p decentralized_chat/lib/components
+          cat << 'EOF' > decentralized_chat/lib/components/friend_item.dart
+          import 'package:flutter/material.dart';
+          import '../models/friend.dart';
+          import '../pages/chat_page.dart';
+
+          class FriendItem extends StatelessWidget {
+            final Friend friend;
+
+            const FriendItem({super.key, required this.friend});
+
+            @override
+            Widget build(BuildContext context) {
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: friend.isOnline ? Colors.green : Colors.grey,
+                  child: friend.avatarUrl.isEmpty ? Text(friend.name[0]) : null,
+                  backgroundImage: friend.avatarUrl.isNotEmpty ? NetworkImage(friend.avatarUrl) : null,
+                ),
+                title: Text(friend.name),
+                subtitle: Text(friend.isOnline ? 'Online' : 'Offline'),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => ChatPage(friend: friend)),
+                ),
+              );
+            }
+          }
+          EOF
+
+          # 写入 lib/components/message_bubble.dart
+          cat << 'EOF' > decentralized_chat/lib/components/message_bubble.dart
+          import 'package:flutter/material.dart';
+          import '../models/message.dart';
+
+          class MessageBubble extends StatelessWidget {
+            final Message message;
+
+            const MessageBubble({super.key, required this.message});
+
+            @override
+            Widget build(BuildContext context) {
+              return Align(
+                alignment: message.isSelf ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: message.isSelf ? Theme.of(context).primaryColor : Colors.grey[300],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    message.content,
+                    style: TextStyle(color: message.isSelf ? Colors.white : Colors.black),
+                  ),
+                ),
+              );
+            }
+          }
+          EOF
+
+          # 修改 android/build.gradle，保留默认结构，仅更新 Kotlin 版本
+          sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "2.1.20"/' decentralized_chat/android/build.gradle
+          sed -i 's/classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:.*"/classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20"/' decentralized_chat/android/build.gradle
+          sed -i 's/classpath "com.android.tools.build:gradle:.*"/classpath "com.android.tools.build:gradle:8.3.0"/' decentralized_chat/android/build.gradle
+
+          # 修改 android/app/build.gradle，调整必要配置
+          cat << 'EOF' > decentralized_chat/android/app/build.gradle
+          apply plugin: 'com.android.application'
+          apply plugin: 'kotlin-android'
+          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+
+          android {
+              compileSdkVersion 34
+
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+
+              defaultConfig {
+                  applicationId "com.example.decentralized_chat"
+                  minSdkVersion 21
+                  targetSdkVersion 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+
+          flutter {
+              source '../..'
+          }
+
+          dependencies {
+              implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.20"
+              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.20"
+          }
+          EOF
+
+      # 6. 清理 Gradle 缓存并确保环境一致
+      - name: 清理 Gradle 缓存
+        run: |
+          rm -rf ~/.gradle/caches/
+          flutter clean
+        working-directory: decentralized_chat
+
+      # 7. 获取依赖
+      - name: 获取依赖
+        run: flutter pub get
+        working-directory: decentralized_chat
+
+      # 8. 构建 APK
+      - name: 构建APK
+        run: flutter build apk --release --verbose
+        working-directory: decentralized_chat
+
+      # 9. 上传 APK 到 Artifacts
+      - name: 上传APK到Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: 应用APK
+          path: decentralized_chat/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      # 10. 创建 Release 并发布 APK
+      - name: 创建Release并发布APK
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: decentralized_chat/build/app/outputs/flutter-apk/app-release.apk
+          tag: v${{ github.run_number }}
+          name: 版本 ${{ github.run_number }}
+          body: "自动构建的APK版本 - 构建于 ${{ github.event.head_commit.timestamp }}"
+          token: ${{ secrets.GITHUB_TOKEN }}
