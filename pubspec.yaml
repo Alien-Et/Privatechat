@@ -1,0 +1,16 @@
+name: 去中心化聊天
+description: 一个去中心化的点对点聊天应用
+version: 1.0.0+1
+environment:
+  sdk: '>=2.17.0 <3.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_webrtc: ^0.10.0
+  shared_preferences: ^2.2.3
+  provider: ^6.1.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true
