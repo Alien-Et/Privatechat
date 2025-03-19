@@ -431,13 +431,18 @@ jobs:
           }
           EOF
 
-          # 修改 android/build.gradle，保留默认结构，仅更新 Kotlin 版本
+          # 修改 android/build.gradle，仅更新必要部分
           sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "2.1.20"/' decentralized_chat/android/build.gradle
           sed -i 's/classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:.*"/classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20"/' decentralized_chat/android/build.gradle
           sed -i 's/classpath "com.android.tools.build:gradle:.*"/classpath "com.android.tools.build:gradle:8.3.0"/' decentralized_chat/android/build.gradle
 
-          # 修改 android/app/build.gradle，调整必要配置
+          # 修改 android/app/build.gradle，确保 flutterRoot 使用相对路径
           cat << 'EOF' > decentralized_chat/android/app/build.gradle
+          def flutterRoot = localProperties.getProperty('flutter.sdk')
+          if (flutterRoot == null) {
+              flutterRoot = file('../../..').absolutePath
+          }
+
           apply plugin: 'com.android.application'
           apply plugin: 'kotlin-android'
           apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
@@ -475,6 +480,12 @@ jobs:
               implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.20"
           }
           EOF
+
+          # 输出 Gradle 文件内容进行调试
+          echo "=== android/build.gradle ==="
+          cat decentralized_chat/android/build.gradle
+          echo "=== android/app/build.gradle ==="
+          cat decentralized_chat/android/app/build.gradle
 
       # 6. 清理 Gradle 缓存并确保环境一致
       - name: 清理 Gradle 缓存
